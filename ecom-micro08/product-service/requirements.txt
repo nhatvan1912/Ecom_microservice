@@ -1,0 +1,6 @@
+Django>=5.0
+djangorestframework
+mysqlclient
+gunicorn
+cryptography
+tensorflow-cpu>=2.16.1

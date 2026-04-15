@@ -1,0 +1,8 @@
+fastapi
+uvicorn[standard]
+httpx
+sqlalchemy
+pymysql
+requests
+pika
+kafka-python

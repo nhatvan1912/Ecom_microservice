@@ -1,0 +1,52 @@
+{% extends "base.html" %}
+{% block title %}Sửa sản phẩm{% endblock %}
+{% block content %}
+<div class="card shadow-sm border-0">
+    <div class="card-header bg-white py-3">
+        <h1 class="h4 mb-0"><i class="bi bi-pencil-square me-2"></i>Sửa thông tin sản phẩm</h1>
+    </div>
+    <div class="card-body p-4">
+        <form action="/products/{{ product.id }}/edit" method="post" class="row g-3">
+            <div class="col-12">
+                <label for="title" class="form-label">Tiêu đề</label>
+                <input class="form-control" type="text" name="title" value="{{ product.title }}" required>
+            </div>
+            <div class="col-12">
+                <label for="brand" class="form-label">Tác giả</label>
+                <input class="form-control" type="text" name="brand" value="{{ product.brand }}" required>
+            </div>
+            <div class="col-md-6">
+                <label for="category" class="form-label">Danh mục</label>
+                <select name="category_id" class="form-select">
+                    <option value="">Không có danh mục</option>
+                    {% for cat in categories %}
+                    <option value="{{ cat.id }}" {% if cat.id == product.category_pk %}selected{% endif %}>{{ cat.name }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="col-md-6">
+                <label for="price" class="form-label">Giá (VND)</label>
+                <input class="form-control" type="number" name="price" value="{{ product.price }}" min="0" required>
+            </div>
+            <div class="col-12">
+                <label for="image_url" class="form-label">Ảnh sản phẩm (URL)</label>
+                <input class="form-control" type="url" name="image_url" value="{{ product.image_url or '' }}" placeholder="https://example.com/product-cover.jpg">
+                <div class="form-text">Để trống để xóa ảnh hiện tại.</div>
+            </div>
+            {% if product.image_url %}
+            <div class="col-12">
+                <img src="{{ product.image_url }}" alt="{{ product.title }}" class="img-thumbnail" style="max-height: 220px; width: auto;">
+            </div>
+            {% endif %}
+            <div class="col-md-6">
+                <label for="stock" class="form-label">Tồn kho</label>
+                <input class="form-control" type="number" name="stock" value="{{ product.stock }}" min="0" required>
+            </div>
+            <div class="col-12 d-flex gap-2 mt-4">
+                <button class="btn btn-primary" type="submit"><i class="bi bi-check-lg me-2"></i>Lưu thay đổi</button>
+                <a class="btn btn-outline-secondary" href="/products">Huỷ</a>
+            </div>
+        </form>
+    </div>
+</div>
+{% endblock %}

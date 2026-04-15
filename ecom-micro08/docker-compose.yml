@@ -1,0 +1,379 @@
+services:
+  rabbitmq:
+    image: rabbitmq:3-management
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "check_running"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  zookeeper:
+    image: confluentinc/cp-zookeeper:7.6.1
+    environment:
+      ZOOKEEPER_CLIENT_PORT: 2181
+      ZOOKEEPER_TICK_TIME: 2000
+
+  kafka:
+    image: confluentinc/cp-kafka:7.6.1
+    depends_on:
+      - zookeeper
+    ports:
+      - "9092:9092"
+    environment:
+      KAFKA_BROKER_ID: 1
+      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+      KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:29092,PLAINTEXT_HOST://0.0.0.0:9092
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:29092,PLAINTEXT_HOST://localhost:9092
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+    healthcheck:
+      test: ["CMD-SHELL", "kafka-topics --bootstrap-server localhost:9092 --list > /dev/null 2>&1"]
+      interval: 10s
+      timeout: 5s
+      retries: 20
+
+  db:
+    image: mysql:8.0
+    environment:
+      MYSQL_ROOT_PASSWORD: "${MYSQL_PASSWORD:-123456}"
+      MYSQL_DATABASE: "ecom_bootstrap"
+    ports:
+      - "3307:3306"
+    command: --default-authentication-plugin=mysql_native_password
+    volumes:
+      - mysql_data:/var/lib/mysql
+      - ./init.sql:/docker-entrypoint-initdb.d/init.sql
+    healthcheck:
+      test: ["CMD-SHELL", "mysqladmin ping -h localhost -uroot -p${MYSQL_PASSWORD:-123456} --silent"]
+      interval: 10s
+      timeout: 5s
+      retries: 20
+
+  auth-service:
+    build: ./auth-service
+    ports:
+      - "8012:8000"
+    environment:
+      CUSTOMER_SERVICE_URL: "http://customer-service:8000"
+      STAFF_SERVICE_URL: "http://staff-service:8000"
+      JWT_SECRET: "ecom_dev_secret"
+      JWT_EXPIRE_MINUTES: "120"
+    depends_on:
+      customer-service:
+        condition: service_healthy
+      staff-service:
+        condition: service_healthy
+    command: bash -c "sleep 10 && uvicorn app:app --host 0.0.0.0 --port 8000"
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:8000/auth/health')\""]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+
+  customer-service:
+    build: ./customer-service
+    ports:
+      - "8001:8000"
+    environment:
+      DB_ENGINE: "django.db.backends.mysql"
+      DB_NAME: "customer_db"
+      DB_USER: "${MYSQL_USER:-root}"
+      DB_PASSWORD: "${MYSQL_PASSWORD:-123456}"
+      DB_HOST: "db"
+      DB_PORT: "3306"
+    depends_on:
+      db:
+        condition: service_healthy
+    command: >
+      bash -c "pip install pymysql cryptography &&
+      python manage.py makemigrations --noinput &&
+      python manage.py migrate --noinput &&
+      gunicorn customer_service.wsgi --bind 0.0.0.0:8000"
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:8000/api/customers/')\""]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+
+  cart-service:
+    build: ./cart-service
+    ports:
+      - "8002:8000"
+    environment:
+      DB_ENGINE: "django.db.backends.mysql"
+      DB_NAME: "cart_db"
+      DB_USER: "${MYSQL_USER:-root}"
+      DB_PASSWORD: "${MYSQL_PASSWORD:-123456}"
+      DB_HOST: "db"
+      DB_PORT: "3306"
+    depends_on:
+      db:
+        condition: service_healthy
+    command: >
+      bash -c "pip install pymysql cryptography &&
+      python manage.py makemigrations --noinput &&
+      python manage.py migrate --noinput &&
+      gunicorn cart_service.wsgi --bind 0.0.0.0:8000"
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:8000/api/carts/')\""]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+
+  product-service:
+    build: ./product-service
+    ports:
+      - "8003:8000"
+    environment:
+      DB_ENGINE: "django.db.backends.mysql"
+      DB_NAME: "product_db"
+      DB_USER: "${MYSQL_USER:-root}"
+      DB_PASSWORD: "${MYSQL_PASSWORD:-123456}"
+      DB_HOST: "db"
+      DB_PORT: "3306"
+    depends_on:
+      db:
+        condition: service_healthy
+    command: >
+      bash -c "pip install pymysql cryptography &&
+      python manage.py makemigrations --noinput &&
+      python manage.py migrate --noinput &&
+      gunicorn product_service.wsgi --bind 0.0.0.0:8000"
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:8000/api/products/')\""]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+
+  staff-service:
+    build: ./staff-service
+    ports:
+      - "8004:8000"
+    environment:
+      DB_ENGINE: "django.db.backends.mysql"
+      DB_NAME: "staff_db"
+      DB_USER: "${MYSQL_USER:-root}"
+      DB_PASSWORD: "${MYSQL_PASSWORD:-123456}"
+      DB_HOST: "db"
+      DB_PORT: "3306"
+      ADMIN_USER: "admin"
+      ADMIN_EMAIL: "admin@ecom.com"
+      ADMIN_PASSWORD: "SecurePassword123"
+      STAFF_USER: "staff"
+      STAFF_EMAIL: "staff@ecom.com"
+      STAFF_PASSWORD: "StaffPassword123"
+      STAFF_NAME: "Default Staff"
+    depends_on:
+      db:
+        condition: service_healthy
+    command: >
+      bash -c "pip install pymysql cryptography &&
+      python manage.py makemigrations --noinput &&
+      python manage.py migrate --noinput &&
+      python manage.py init_admin &&
+      gunicorn staff_service.wsgi --bind 0.0.0.0:8000"
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:8000/api/staff/')\""]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+
+  order-service:
+    build: ./order-service
+    ports:
+      - "8005:8000"
+    environment:
+      DB_URL: "mysql+pymysql://${MYSQL_USER:-root}:${MYSQL_PASSWORD:-123456}@db:3306/order_db"
+      RABBITMQ_URL: "amqp://guest:guest@rabbitmq:5672/%2F"
+      EVENT_EXCHANGE: "ecom.events"
+      KAFKA_BOOTSTRAP_SERVERS: "kafka:29092"
+      KAFKA_TOPIC: "ecom.events"
+    depends_on:
+      db:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+    command: >
+      bash -c "pip install pymysql cryptography sqlalchemy httpx &&
+      uvicorn app:app --host 0.0.0.0 --port 8000"
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:8000/health')\""]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+
+  payment-service:
+    build: ./payment-service
+    ports:
+      - "8006:8000"
+    depends_on:
+      - order-service
+      - rabbitmq
+    environment:
+      RABBITMQ_URL: "amqp://guest:guest@rabbitmq:5672/%2F"
+      EVENT_EXCHANGE: "ecom.events"
+    command: bash -c "sleep 10 && uvicorn app:app --host 0.0.0.0 --port 8000"
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:8000/payments/health')\""]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+
+
+  shipping-service:
+    build: ./shipping-service
+    ports:
+      - "8007:8000"
+    depends_on:
+      - order-service
+      - rabbitmq
+    environment:
+      RABBITMQ_URL: "amqp://guest:guest@rabbitmq:5672/%2F"
+      EVENT_EXCHANGE: "ecom.events"
+    command: bash -c "sleep 10 && uvicorn app:app --host 0.0.0.0 --port 8000"
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:8000/shipments/health')\""]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+
+  manager-service:
+    build: ./manager-service
+    ports:
+      - "8008:8000"
+    environment:
+      DB_URL: "mysql+pymysql://${MYSQL_USER:-root}:${MYSQL_PASSWORD:-123456}@db:3306/manager_db"
+    depends_on:
+      db:
+        condition: service_healthy
+    command: bash -c "sleep 10 && uvicorn app:app --host 0.0.0.0 --port 8000"
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:8000/api/manager/health')\""]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+
+  catalog-service:
+    build: ./catalog-service
+    ports:
+      - "8009:8000"
+    environment:
+      DB_URL: "mysql+pymysql://${MYSQL_USER:-root}:${MYSQL_PASSWORD:-123456}@db:3306/catalog_db"
+    depends_on:
+      db:
+        condition: service_healthy
+    command: bash -c "sleep 10 && uvicorn app:app --host 0.0.0.0 --port 8000"
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:8000/api/catalog/health')\""]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+
+  comment-rate-service:
+    build: ./comment-rate-service
+    ports:
+      - "8010:8000"
+    environment:
+      DB_URL: "mysql+pymysql://${MYSQL_USER:-root}:${MYSQL_PASSWORD:-123456}@db:3306/comment_rate_db"
+    depends_on:
+      db:
+        condition: service_healthy
+    command: bash -c "sleep 10 && uvicorn app:app --host 0.0.0.0 --port 8000"
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:8000/api/comment-rates/health')\""]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+
+  recommender-ai-service:
+    build: ./recommender-ai-service
+    ports:
+      - "8011:8000"
+    environment:
+      DB_URL: "mysql+pymysql://${MYSQL_USER:-root}:${MYSQL_PASSWORD:-123456}@db:3306/recommender_db"
+      PRODUCT_SERVICE_URL: "http://product-service:8000"
+      ORDER_SERVICE_URL: "http://order-service:8000"
+      TF_CPP_MIN_LOG_LEVEL: "2"
+      TF_FORCE_GPU_ALLOW_GROWTH: "true"
+    depends_on:
+      db:
+        condition: service_healthy
+    command: bash -c "sleep 10 && python init_recommender.py && uvicorn app:app --host 0.0.0.0 --port 8000"
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:8000/api/recommendations/health')\""]
+      interval: 30s
+      timeout: 15s
+      retries: 8
+
+  chatbot-service:
+    build: ./chatbot-service
+    ports:
+      - "8013:8000"
+    environment:
+      DB_URL: "mysql+pymysql://${MYSQL_USER:-root}:${MYSQL_PASSWORD:-123456}@db:3306/chatbot_db"
+      PRODUCT_SERVICE_URL: "http://product-service:8000"
+      ORDER_SERVICE_URL: "http://order-service:8000"
+      MAX_CONTEXT_CHUNKS: "3"
+      LLM_API_BASE_URL: "${LLM_API_BASE_URL:-http://host.docker.internal:11434/v1}"
+      LLM_API_KEY: "${LLM_API_KEY:-dummy}"
+      LLM_MODEL: "${LLM_MODEL:-qwen2.5:3b}"
+      LLM_TIMEOUT: "${LLM_TIMEOUT:-45}"
+      LLM_MAX_TOKENS: "${LLM_MAX_TOKENS:-180}"
+    depends_on:
+      db:
+        condition: service_healthy
+      product-service:
+        condition: service_healthy
+      order-service:
+        condition: service_healthy
+    command: bash -c "sleep 10 && uvicorn app:app --host 0.0.0.0 --port 8000"
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:8000/api/chatbot/health')\""]
+      interval: 30s
+      timeout: 10s
+      retries: 8
+
+  api-gateway:
+    build: ./api-gateway
+    ports:
+      - "8081:8000"
+    depends_on:
+      auth-service:
+        condition: service_healthy
+      customer-service:
+        condition: service_healthy
+      cart-service:
+        condition: service_healthy
+      product-service:
+        condition: service_healthy
+      staff-service:
+        condition: service_healthy
+      order-service:
+        condition: service_healthy
+      payment-service:
+        condition: service_healthy
+      shipping-service:
+        condition: service_healthy
+      manager-service:
+        condition: service_healthy
+      catalog-service:
+        condition: service_healthy
+      comment-rate-service:
+        condition: service_healthy
+      recommender-ai-service:
+        condition: service_healthy
+      chatbot-service:
+        condition: service_healthy
+    environment:
+      AUTH_SERVICE_URL: "http://auth-service:8000"
+      CHATBOT_SERVICE_URL: "http://chatbot-service:8000"
+    command: bash -c "uvicorn app:app --host 0.0.0.0 --port 8000"
+
+volumes:
+  mysql_data:
