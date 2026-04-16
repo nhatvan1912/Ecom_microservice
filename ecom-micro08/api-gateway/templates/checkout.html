@@ -9,6 +9,13 @@
     </div>
 </section>
 
+{% if request.query_params.get('err') %}
+<div class="alert alert-danger alert-dismissible fade show" role="alert">
+    <strong>Lỗi:</strong> {{ request.query_params.get('err') }}
+    <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+</div>
+{% endif %}
+
 <div class="container py-1 px-0">
     <form action="/checkout" method="post" id="checkoutForm">
         <div class="row g-4">
@@ -25,7 +32,7 @@
                                 {% for addr in addresses %}
                                 <div class="form-check card p-3 mb-2 border-primary-subtle bg-light-subtle position-relative checkout-option-card">
                                     <div class="d-flex align-items-center">
-                                        <input class="form-check-input mt-0 me-3" type="radio" name="selected_address" id="addr_{{ addr.id }}" value="{{ addr.id }}" {% if default_address_id and addr.id == default_address_id %}checked{% endif %} onchange="toggleNewAddress(false)" style="transform: scale(1.2);">
+                                        <input class="form-check-input mt-0 me-3" type="radio" name="selected_address" id="addr_{{ addr.id }}" value="{{ addr.id }}" {% if loop.first %}checked{% endif %} onchange="toggleNewAddress(false)" style="transform: scale(1.2);">
                                         <label class="form-check-label w-100 cursor-pointer" for="addr_{{ addr.id }}">
                                             <div class="fw-bold text-dark">{{ addr.recipient_name }} <span class="fw-normal text-muted">| {{ addr.phone_number }}</span></div>
                                             <div class="small text-secondary">{{ addr.address_line }}, {{ addr.city }}, {{ addr.province }}</div>

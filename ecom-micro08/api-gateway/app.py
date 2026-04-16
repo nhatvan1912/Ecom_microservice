@@ -551,6 +551,189 @@ async def admin_dashboard(request: Request, user: Optional[dict] = Depends(get_c
     
     return templates.TemplateResponse(request, "admin.html", {"user": user, "stats": stats})
 
+@app.get("/checkout", response_class=HTMLResponse)
+async def checkout_page(request: Request, user: Optional[dict] = Depends(get_current_user)):
+    if not user: return RedirectResponse(url="/login")
+    
+    # Get cart items
+    items = []
+    total = 0
+    user_id = user.get('id')
+    try:
+        async with httpx.AsyncClient(timeout=5) as client:
+            resp = await client.get(f"{CART_SERVICE_URL}/api/carts/{user_id}/")
+            if resp.status_code == 200:
+                cart = resp.json()
+                items = cart.get('items', [])
+                total = cart.get('total', 0)
+    except Exception as e:
+        print(f"checkout_page: error fetching cart {e}")
+    
+    # Get customer addresses
+    addresses = []
+    default_address_id = None
+    try:
+        async with httpx.AsyncClient(timeout=5) as client:
+            resp = await client.get(f"{CUSTOMER_SERVICE_URL}/api/customers/{user_id}/addresses/")
+            if resp.status_code == 200:
+                addresses = resp.json()
+                if isinstance(addresses, list) and addresses:
+                    default_address_id = addresses[0].get('id')
+    except Exception:
+        pass
+    
+    return templates.TemplateResponse(request, "checkout.html", {
+        "user": user,
+        "items": items,
+        "total": total,
+        "addresses": addresses,
+        "default_address_id": default_address_id
+    })
+
+@app.post("/checkout")
+async def checkout_process(request: Request, user: Optional[dict] = Depends(get_current_user)):
+    if not user: return RedirectResponse(url="/login")
+    
+    try:
+        form = await request.form()
+    except Exception as e:
+        print(f"checkout_process: form parse error {e}")
+        return RedirectResponse(url="/checkout?err=form_parse_error", status_code=303)
+    
+    user_id = user.get('id')
+    
+    # Get selected or new address
+    selected_address = form.get('selected_address', '')
+    shipping_address = ""
+    print(f"checkout: selected_address={selected_address}")
+    
+    if selected_address == "new" or not selected_address:
+        # Build new address from form data
+        recipient_name = form.get('new_recipient_name', '')
+        phone_number = form.get('new_phone_number', '')
+        address_line = form.get('new_address_line', '')
+        city = form.get('new_city', '')
+        province = form.get('new_province', '')
+        
+        if not all([recipient_name, phone_number, address_line, city, province]):
+            print(f"checkout: incomplete address fields")
+            return RedirectResponse(url="/checkout?err=incomplete_address", status_code=303)
+        
+        shipping_address = f"{address_line}, {city}, {province}"
+    else:
+        # Use existing address
+        try:
+            async with httpx.AsyncClient(timeout=5) as client:
+                resp = await client.get(f"{CUSTOMER_SERVICE_URL}/api/customers/{user_id}/addresses/{selected_address}/")
+                if resp.status_code == 200:
+                    addr = resp.json()
+                    shipping_address = f"{addr.get('address_line', '')}, {addr.get('city', '')}, {addr.get('province', '')}"
+                else:
+                    print(f"checkout: address fetch failed {resp.status_code}")
+                    return RedirectResponse(url="/checkout?err=address_not_found", status_code=303)
+        except Exception as e:
+            print(f"checkout: error fetching address {e}")
+            return RedirectResponse(url="/checkout?err=address_fetch_error", status_code=303)
+    
+    if not shipping_address:
+        print(f"checkout: shipping_address is empty")
+        return RedirectResponse(url="/checkout?err=no_address", status_code=303)
+    
+    payment_method = form.get('payment_method', 'cod')
+    print(f"checkout: payment_method={payment_method}, shipping_address={shipping_address}")
+    
+    # Get cart data
+    cart_data = None
+    try:
+        async with httpx.AsyncClient(timeout=5) as client:
+            resp = await client.get(f"{CART_SERVICE_URL}/api/carts/{user_id}/")
+            if resp.status_code == 200:
+                cart_data = resp.json()
+                print(f"checkout: cart data fetched - items={len(cart_data.get('items', []))}")
+            else:
+                print(f"checkout: cart fetch returned {resp.status_code}")
+    except Exception as e:
+        print(f"checkout: error fetching cart {e}")
+        return RedirectResponse(url="/cart?err=cart_fetch_failed", status_code=303)
+    
+    if not cart_data or not cart_data.get('items'):
+        return RedirectResponse(url="/cart?err=empty_cart", status_code=303)
+    
+    # Build order items - cart already has product info from serializer
+    items = []
+    total = 0
+    try:
+        for item in cart_data.get('items', []):
+            product_id = item.get('product_id')
+            quantity = item.get('quantity', 1)
+            price = float(item.get('price', 0))
+            title = item.get('title', f'Product {product_id}')
+            
+            items.append({
+                "product_id": product_id,
+                "quantity": quantity,
+                "price_at_purchase": price,
+                "product_title": title
+            })
+            total += price * quantity
+        
+        print(f"checkout: built order items - count={len(items)}, total={total}")
+    except Exception as e:
+        print(f"checkout: error building order items {e}")
+        return RedirectResponse(url="/checkout?err=item_build_failed", status_code=303)
+    
+    order_data = {
+        "customer_id": user_id,
+        "items": items,
+        "total_price": total,
+        "payment_method": payment_method,
+        "shipping_address": shipping_address
+    }
+    print(f"checkout: order_data prepared - {order_data}")
+    
+    # Create order
+    try:
+        async with httpx.AsyncClient(timeout=10) as client:
+            print(f"checkout: posting order to {ORDER_SERVICE_URL}/api/orders/")
+            resp = await client.post(f"{ORDER_SERVICE_URL}/api/orders/", json=order_data)
+            print(f"checkout: order creation response {resp.status_code}")
+            if resp.status_code in (200, 201):
+                order = resp.json()
+                order_id = order.get('id') or order.get('order_id')
+                
+                # Clear cart
+                try:
+                    await client.delete(f"{CART_SERVICE_URL}/api/carts/{user_id}/")
+                except:
+                    pass
+                
+                return RedirectResponse(url=f"/order/{order_id}/complete", status_code=303)
+            else:
+                error_msg = resp.text if hasattr(resp, 'text') else str(resp.status_code)
+                print(f"checkout: order creation failed {resp.status_code} - {error_msg}")
+                return RedirectResponse(url=f"/checkout?err=order_failed", status_code=303)
+    except Exception as e:
+        print(f"checkout: exception {e}")
+        return RedirectResponse(url=f"/checkout?err=order_exception", status_code=303)
+
+@app.get("/order/{order_id}/complete", response_class=HTMLResponse)
+async def order_complete(request: Request, order_id: str, user: Optional[dict] = Depends(get_current_user)):
+    if not user: return RedirectResponse(url="/login")
+    
+    order = None
+    try:
+        async with httpx.AsyncClient(timeout=5) as client:
+            resp = await client.get(f"{ORDER_SERVICE_URL}/api/orders/{order_id}/")
+            if resp.status_code == 200:
+                order = resp.json()
+    except:
+        pass
+    
+    if not order:
+        raise HTTPException(status_code=404, detail="Đơn hàng không tồn tại")
+    
+    return templates.TemplateResponse(request, "order_complete.html", {"user": user, "order": order})
+
 @app.get("/manager", response_class=HTMLResponse)
 async def manager_dashboard(request: Request, user: Optional[dict] = Depends(get_current_user)):
     if not user or user.get("role") != "manager": return RedirectResponse(url="/login")
