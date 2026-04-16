@@ -322,7 +322,7 @@ async def add_to_cart(request: Request, product_id: int, user: Optional[dict] = 
                     if resp.status_code in (200, 201):
                         # Try to fetch cart id for this user and store in session
                         try:
-                            get_cart = await client.get(f"{base}/api/carts/{user_id}/")
+                            get_cart = await client.get(f"{base}/api/carts/{user.get('id')}/")
                             if get_cart.status_code == 200:
                                 cart_data = get_cart.json()
                                 cart_id = cart_data.get('id') if isinstance(cart_data, dict) else None
@@ -366,7 +366,7 @@ async def add_to_cart(request: Request, product_id: int, user: Optional[dict] = 
                     print(f"add_to_cart: POST {url_me} -> {getattr(resp_me, 'status_code', 'ERR')} {getattr(resp_me, 'text', '')}")
                     if getattr(resp_me, 'status_code', None) in (200, 201):
                         try:
-                            get_cart = await client.get(f"{base}/api/carts/{user_id}/")
+                            get_cart = await client.get(f"{base}/api/carts/{user.get('id')}/")
                             if get_cart.status_code == 200:
                                 cart_data = get_cart.json()
                                 cart_id = cart_data.get('id') if isinstance(cart_data, dict) else None
@@ -420,10 +420,136 @@ async def ai_chat(request: Request, payload: dict):
         return {"answer": "Lỗi kết nối chatbot service"}
 
 # Admin routes
+@app.get("/admin/reviews", response_class=HTMLResponse)
+async def admin_reviews(request: Request, user: Optional[dict] = Depends(get_current_user)):
+    if not user or user.get("role") != "staff": return RedirectResponse(url="/login")
+    reviews = []
+    try:
+        resp = await _fetch_service(f"/api/products/{0}/reviews/")
+        # If we need all reviews, try to fetch from a different endpoint
+        # For now, just fetch from product service
+        async with httpx.AsyncClient(timeout=5) as client:
+            resp = await client.get(f"{PRODUCT_SERVICE_URL}/api/products/")
+            if resp and resp.status_code == 200:
+                products = resp.json()
+                all_reviews = []
+                for product in products:
+                    try:
+                        resp2 = await client.get(f"{PRODUCT_SERVICE_URL}/api/products/{product['id']}/reviews/")
+                        if resp2.status_code == 200:
+                            reviews_data = resp2.json()
+                            if isinstance(reviews_data, list):
+                                for review in reviews_data:
+                                    review['product_title'] = product.get('title', 'Unknown')
+                                    all_reviews.append(review)
+                    except:
+                        pass
+                reviews = all_reviews
+    except Exception as e:
+        print(f"admin_reviews error: {e}")
+    return templates.TemplateResponse(request, "admin_reviews.html", {"user": user, "reviews": reviews})
+
+@app.get("/admin/carts", response_class=HTMLResponse)
+async def admin_carts(request: Request, user: Optional[dict] = Depends(get_current_user)):
+    if not user or user.get("role") != "staff": return RedirectResponse(url="/login")
+    carts = []
+    try:
+        async with httpx.AsyncClient(timeout=5) as client:
+            resp = await client.get(f"{CART_SERVICE_URL}/api/carts/")
+            if resp.status_code == 200:
+                carts = resp.json()
+                if isinstance(carts, dict) and 'items' in carts:
+                    carts = [carts]
+    except Exception as e:
+        print(f"admin_carts error: {e}")
+    return templates.TemplateResponse(request, "admin_carts.html", {"user": user, "carts": carts})
+
+@app.get("/admin/categories", response_class=HTMLResponse)
+async def admin_categories(request: Request, user: Optional[dict] = Depends(get_current_user)):
+    if not user or user.get("role") != "staff": return RedirectResponse(url="/login")
+    categories = []
+    try:
+        resp = await _fetch_service("/api/categories/")
+        if resp and resp.status_code == 200:
+            categories = resp.json()
+    except Exception:
+        pass
+    return templates.TemplateResponse(request, "admin_categories.html", {"user": user, "categories": categories})
+
+@app.get("/admin/orders", response_class=HTMLResponse)
+async def admin_orders(request: Request, user: Optional[dict] = Depends(get_current_user)):
+    if not user or user.get("role") != "staff": return RedirectResponse(url="/login")
+    orders = []
+    try:
+        async with httpx.AsyncClient(timeout=5) as client:
+            resp = await client.get(f"{ORDER_SERVICE_URL}/api/orders/")
+            if resp.status_code == 200:
+                orders = resp.json()
+    except Exception:
+        pass
+    return templates.TemplateResponse(request, "admin_orders.html", {"user": user, "orders": orders})
+
+@app.get("/admin/customers", response_class=HTMLResponse)
+async def admin_customers(request: Request, user: Optional[dict] = Depends(get_current_user)):
+    if not user or user.get("role") != "staff": return RedirectResponse(url="/login")
+    customers = []
+    try:
+        async with httpx.AsyncClient(timeout=5) as client:
+            resp = await client.get(f"{CUSTOMER_SERVICE_URL}/api/customers/")
+            if resp.status_code == 200:
+                customers = resp.json()
+    except Exception:
+        pass
+    return templates.TemplateResponse(request, "admin_customers.html", {"user": user, "customers": customers})
+
 @app.get("/admin", response_class=HTMLResponse)
 async def admin_dashboard(request: Request, user: Optional[dict] = Depends(get_current_user)):
     if not user or user.get("role") != "staff": return RedirectResponse(url="/login")
-    return templates.TemplateResponse(request, "admin.html", {"user": user})
+    
+    # Fetch statistics
+    stats = {"product_count": 0, "order_count": 0, "review_count": 0}
+    try:
+        async with httpx.AsyncClient(timeout=5) as client:
+            # Get product count
+            try:
+                resp = await client.get(f"{PRODUCT_SERVICE_URL}/api/products/")
+                if resp.status_code == 200:
+                    products = resp.json()
+                    stats['product_count'] = len(products) if isinstance(products, list) else 1
+            except:
+                pass
+            
+            # Get order count
+            try:
+                resp = await client.get(f"{ORDER_SERVICE_URL}/api/orders/")
+                if resp.status_code == 200:
+                    orders = resp.json()
+                    stats['order_count'] = len(orders) if isinstance(orders, list) else 1
+            except:
+                pass
+            
+            # Get review count
+            try:
+                resp = await client.get(f"{PRODUCT_SERVICE_URL}/api/products/")
+                if resp.status_code == 200:
+                    products = resp.json()
+                    if isinstance(products, list):
+                        review_count = 0
+                        for product in products:
+                            try:
+                                resp2 = await client.get(f"{PRODUCT_SERVICE_URL}/api/products/{product.get('id', 0)}/reviews/")
+                                if resp2.status_code == 200:
+                                    reviews = resp2.json()
+                                    review_count += len(reviews) if isinstance(reviews, list) else 0
+                            except:
+                                pass
+                        stats['review_count'] = review_count
+            except:
+                pass
+    except Exception as e:
+        print(f"admin_dashboard error: {e}")
+    
+    return templates.TemplateResponse(request, "admin.html", {"user": user, "stats": stats})
 
 @app.get("/manager", response_class=HTMLResponse)
 async def manager_dashboard(request: Request, user: Optional[dict] = Depends(get_current_user)):
