@@ -16,6 +16,13 @@
 </div>
 {% endif %}
 
+{% if error_msg %}
+<div class="alert alert-danger alert-dismissible fade show" role="alert">
+    <strong>Lỗi:</strong> {{ error_msg }}
+    <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+</div>
+{% endif %}
+
 <div class="container py-1 px-0">
     <form action="/checkout" method="post" id="checkoutForm">
         <div class="row g-4">

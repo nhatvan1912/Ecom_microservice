@@ -587,7 +587,8 @@ async def checkout_page(request: Request, user: Optional[dict] = Depends(get_cur
         "items": items,
         "total": total,
         "addresses": addresses,
-        "default_address_id": default_address_id
+        "default_address_id": default_address_id,
+        "error_msg": ""
     })
 
 @app.post("/checkout")
@@ -709,12 +710,29 @@ async def checkout_process(request: Request, user: Optional[dict] = Depends(get_
                 
                 return RedirectResponse(url=f"/order/{order_id}/complete", status_code=303)
             else:
-                error_msg = resp.text if hasattr(resp, 'text') else str(resp.status_code)
+                try:
+                    error_data = resp.json()
+                    error_msg = error_data.get('detail', 'Order creation failed')
+                except:
+                    error_msg = resp.text if resp.text else f"HTTP {resp.status_code}"
                 print(f"checkout: order creation failed {resp.status_code} - {error_msg}")
-                return RedirectResponse(url=f"/checkout?err=order_failed", status_code=303)
+                # Return error to template instead of generic message
+                return templates.TemplateResponse(request, "checkout.html", {
+                    "user": user,
+                    "error_msg": f"Lỗi tạo đơn hàng: {error_msg}",
+                    "items": cart_data.get('items', []) if cart_data else [],
+                    "total": total,
+                    "addresses": addresses
+                })
     except Exception as e:
         print(f"checkout: exception {e}")
-        return RedirectResponse(url=f"/checkout?err=order_exception", status_code=303)
+        return templates.TemplateResponse(request, "checkout.html", {
+            "user": user,
+            "error_msg": f"Lỗi: {str(e)}",
+            "items": cart_data.get('items', []) if cart_data else [],
+            "total": total,
+            "addresses": addresses
+        })
 
 @app.get("/order/{order_id}/complete", response_class=HTMLResponse)
 async def order_complete(request: Request, order_id: str, user: Optional[dict] = Depends(get_current_user)):
