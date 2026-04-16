@@ -595,13 +595,17 @@ async def checkout_page(request: Request, user: Optional[dict] = Depends(get_cur
 async def checkout_process(request: Request, user: Optional[dict] = Depends(get_current_user)):
     if not user: return RedirectResponse(url="/login")
     
+    user_id = user.get('id')
+    addresses = []  # Initialize for error handling
+    cart_data = None
+    items = []
+    total = 0
+    
     try:
         form = await request.form()
     except Exception as e:
         print(f"checkout_process: form parse error {e}")
         return RedirectResponse(url="/checkout?err=form_parse_error", status_code=303)
-    
-    user_id = user.get('id')
     
     # Get selected or new address
     selected_address = form.get('selected_address', '')
