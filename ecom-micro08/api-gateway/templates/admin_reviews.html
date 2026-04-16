@@ -23,7 +23,7 @@
                     {% for review in reviews %}
                     <tr>
                         <td>
-                            <a href="/products/{{ review.product_id }}" class="text-decoration-none">{{ review.book_title }}</a>
+                            <a href="/products/{{ review.product_id }}" class="text-decoration-none">{{ review.product_title or review.book_title }}</a>
                         </td>
                         <td>{{ review.customer_name }}</td>
                         <td>{{ review.rating }}/5</td>

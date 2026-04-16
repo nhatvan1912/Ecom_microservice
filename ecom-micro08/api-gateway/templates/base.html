@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>{% block title %}Bookstore{% endblock %}</title>
+    <title>{% block title %}e-com{% endblock %}</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Sora:wght@500;600;700;800&display=swap" rel="stylesheet">
@@ -29,7 +29,7 @@
             <div class="app-header-shell d-flex flex-wrap align-items-center justify-content-between gap-3">
                 <a href="/" class="d-flex align-items-center mb-0 text-decoration-none app-brand">
                     <span class="brand-mark"><i class="bi bi-product-half"></i></span>
-                    <span class="brand-word">Bookstore</span>
+                    <span class="brand-word">e-com</span>
                 </a>
 
                 {% if user %}
@@ -230,7 +230,7 @@
 
     <footer class="site-footer">
         <div class="container d-flex flex-column flex-md-row justify-content-between gap-2">
-            <span>Bookstore Microservices UI</span>
+            <span>e-com Microservices UI</span>
             <span>Trai nghiem mua sam san pham chuyen nghiep</span>
         </div>
     </footer>
@@ -248,7 +248,7 @@
             const chatBody = document.getElementById('chatFabBody');
             const sendBtn = document.getElementById('chatFabSend');
             const quickPrompts = document.getElementById('chatQuickPrompts');
-            const chatHistoryKey = 'bookstoreChatHistoryV1';
+            const chatHistoryKey = 'ecomChatHistoryV1';
             let chatHistory = [];
 
             if (!chatBtn || !chatPanel || !chatForm || !chatInput || !chatBody || !sendBtn) {

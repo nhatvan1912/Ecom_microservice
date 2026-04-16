@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% block title %}Danh sản phẩm sản phẩm{% endblock %}
+{% block title %}Danh sách sản phẩm{% endblock %}
 {% block content %}
 <section class="products-toolbar card shadow-sm border-0 mb-4">
     <div class="card-body">
@@ -9,9 +9,9 @@
                 <p class="text-muted mb-0">Khám phá kho sản phẩm với bộ lọc nhanh theo tên và danh mục.</p>
             </div>
             <div class="d-flex align-items-center gap-2">
-                <span class="badge rounded-pill text-bg-light border">{{ total_books or products|length }} đầu sản phẩm</span>
+                <span class="badge rounded-pill text-bg-light border">{{ total_products or total_books or products|length }} đầu sản phẩm</span>
                 {% if user.role == 'staff' %}
-                <button id="booksIngestBtn" type="button" class="btn btn-outline-primary">
+                <button id="productsIngestBtn" type="button" class="btn btn-outline-primary">
                     <i class="bi bi-arrow-repeat me-2"></i>Re-ingest Chatbot
                 </button>
                 <a class="btn btn-primary" href="/products/add"><i class="bi bi-plus-circle-fill me-2"></i>Thêm sản phẩm mới</a>
@@ -19,7 +19,7 @@
             </div>
         </div>
         {% if user.role == 'staff' %}
-        <div class="small text-muted mb-2" id="booksIngestStatus"></div>
+        <div class="small text-muted mb-2" id="productsIngestStatus"></div>
         {% endif %}
 
         <form method="get" action="/products" class="row g-2 align-items-end">
@@ -56,7 +56,7 @@
                 <h5 class="card-title h6 mb-1 flex-grow-1">
                     <a href="/products/{{ product.id }}" class="text-decoration-none text-dark product-title">{{ product.title }}</a>
                 </h5>
-                <p class="card-text small text-muted mb-2">Tác giả: {{ product.brand }}</p>
+                <p class="card-text small text-muted mb-2">Thương hiệu: {{ product.brand }}</p>
                 <div class="d-flex align-items-center justify-content-between mb-3">
                     <p class="card-text fw-bold text-primary fs-5 mb-0">{{ "{:,.0f}".format(product.price|float) }}₫</p>
                     {% if product.stock|int > 0 %}
@@ -127,8 +127,8 @@
 {% if user.role == 'staff' %}
 <script>
     (function () {
-        const btn = document.getElementById('booksIngestBtn');
-        const status = document.getElementById('booksIngestStatus');
+        const btn = document.getElementById('productsIngestBtn') || document.getElementById('booksIngestBtn');
+        const status = document.getElementById('productsIngestStatus') || document.getElementById('booksIngestStatus');
         if (!btn || !status) {
             return;
         }

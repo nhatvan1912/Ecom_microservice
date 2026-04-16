@@ -11,7 +11,7 @@ app = FastAPI(title="Auth Service")
 
 CUSTOMER_SERVICE_URL = os.getenv("CUSTOMER_SERVICE_URL", "http://customer-service:8000")
 STAFF_SERVICE_URL = os.getenv("STAFF_SERVICE_URL", "http://staff-service:8000")
-JWT_SECRET = os.getenv("JWT_SECRET", "bookstore_dev_secret")
+JWT_SECRET = os.getenv("JWT_SECRET", "ecom_dev_secret")
 JWT_ALGORITHM = "HS256"
 JWT_EXPIRE_MINUTES = int(os.getenv("JWT_EXPIRE_MINUTES", "120"))
 
